@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Local Music Player</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; }
+    select, button { margin: 0.5rem 0; padding: 0.5rem; }
+    textarea { width: 100%; height: 200px; margin-top: 1rem; }
+    audio { width: 100%; margin-top: 1rem; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Local Music Player</h1>
+  <button id="pickBtn">Choose “AllMusic Folder”</button>
+  <br/>
+  <select id="albumSelect" disabled>
+    <option value="">Select an album…</option>
+  </select>
+  <br/>
+  <select id="trackSelect" disabled>
+    <option value="">Select a track…</option>
+  </select>
+  <br/>
+  <button id="playBtn" style="display:none;">Play</button>
+  <audio id="player" controls style="display:none;"></audio>
+  <textarea id="info" readonly placeholder="Track info will appear here…"></textarea>
+
+  <script>
+    let rootHandle;
+    let albums = [];
+
+    const pickBtn     = document.getElementById('pickBtn');
+    const albumSelect = document.getElementById('albumSelect');
+    const trackSelect = document.getElementById('trackSelect');
+    const playBtn     = document.getElementById('playBtn');
+    const player      = document.getElementById('player');
+    const infoBox     = document.getElementById('info');
+
+    // 1) Pick the AllMusic Folder
+    pickBtn.addEventListener('click', async () => {
+      try {
+        rootHandle = await window.showDirectoryPicker();
+      } catch {
+        return alert('Folder selection cancelled or not supported.');
+      }
+
+      albums = [];
+      albumSelect.innerHTML = '<option value="">Select an album…</option>';
+      albumSelect.disabled = false;
+
+      // enumerate only subdirectories
+      for await (const [name, handle] of rootHandle.entries()) {
+        if (handle.kind === 'directory') {
+          albums.push({ name, handle });
+          albumSelect.add(new Option(name, name));
+        }
+      }
+    });
+
+    // 2) When user picks an album, list its .mp3 files
+    albumSelect.addEventListener('change', async () => {
+      trackSelect.innerHTML = '<option value="">Select a track…</option>';
+      trackSelect.disabled = true;
+      playBtn.style.display = 'none';
+      player.style.display = 'none';
+      infoBox.value = '';
+
+      const selName = albumSelect.value;
+      if (!selName) return;
+
+      const album = albums.find(a => a.name === selName);
+      if (!album) return;
+
+      // list .mp3 in that folder
+      for await (const [fileName, handle] of album.handle.entries()) {
+        if (handle.kind === 'file' && fileName.toLowerCase().endsWith('.mp3')) {
+          trackSelect.add(new Option(fileName, fileName));
+        }
+      }
+      trackSelect.disabled = false;
+    });
+
+    // 3) Show Play button when a track is chosen
+    trackSelect.addEventListener('change', () => {
+      playBtn.style.display = trackSelect.value ? 'inline-block' : 'none';
+      player.style.display = 'none';
+      infoBox.value = '';
+    });
+
+    // 4) Play audio + load .txt
+    playBtn.addEventListener('click', async () => {
+      const album = albums.find(a => a.name === albumSelect.value);
+      const track = trackSelect.value;
+      if (!album || !track) return;
+
+      // load and play mp3
+      const mp3Handle = await album.handle.getFileHandle(track);
+      const mp3File   = await mp3Handle.getFile();
+      player.src      = URL.createObjectURL(mp3File);
+      player.style.display = 'block';
+      player.play();
+
+      // load same-named .txt
+      const txtName = track.replace(/\.mp3$/i, '.txt');
+      try {
+        const txtHandle = await album.handle.getFileHandle(txtName);
+        const txtFile   = await txtHandle.getFile();
+        infoBox.value   = await txtFile.text();
+      } catch {
+        infoBox.value = 'No .txt file found for this track.';
+      }
+    });
+  </script>
+</body>
+</html>
