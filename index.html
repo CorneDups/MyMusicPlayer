@@ -1,89 +1,118 @@
-  <!DOCTYPE html>
-  <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Music Player</title>
-    <style>
-      body { font-family: sans-serif; max-width:600px; margin:2rem auto; }
-      select, button { margin:0.5rem 0; padding:0.5rem; }
-      textarea { width:100%; height:200px; margin-top:1rem; }
-      audio { width:100%; margin-top:1rem; display:block; }
-    </style>
-  </head>
-  <body>
-    <h1>Music Player</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Static Music Player</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; }
+    select, button { margin: 0.5rem 0; padding: 0.5rem; }
+    textarea { width: 100%; height: 200px; margin-top: 1rem; }
+    audio { width: 100%; margin-top: 1rem; display: block; }
+  </style>
+</head>
+<body>
+  <h1>Music Player</h1>
+
+  <!-- Album dropdown -->
+  <select id="albumSelect" disabled>
+    <option value="">Select an album…</option>
+  </select>
+  <br/>
+
+  <!-- Track dropdown -->
+  <select id="trackSelect" disabled>
+    <option value="">Select a track…</option>
+  </select>
+  <br/>
+
+  <!-- Play button -->
+  <button id="playBtn" style="display:none;">Play</button>
   
-    <select id="albumSelect">
-      <option value="">Select album…</option>
-    </select>
-    <br />
-    <select id="trackSelect" disabled>
-      <option value="">Select track…</option>
-    </select>
-    <br />
-    <button id="playBtn" style="display:none;">Play</button>
+  <!-- Audio player -->
+  <audio id="player" controls style="display:none;"></audio>
   
-    <audio id="player" controls style="display:none;"></audio>
-    <textarea id="info" readonly placeholder="Track info…"></textarea>
-  
-    <script>
-      let library;
-      const albumSelect = document.getElementById('albumSelect');
-      const trackSelect = document.getElementById('trackSelect');
-      const playBtn     = document.getElementById('playBtn');
-      const player      = document.getElementById('player');
-      const infoBox     = document.getElementById('info');
-  
-      // 1) load manifest
-      fetch('library.json')
-        .then(res=>res.json())
-        .then(json=>{
-          library = json.folders;
-          library.forEach(f=> albumSelect.add(new Option(f.name, f.name)));
+  <!-- Track info -->
+  <textarea id="info" readonly placeholder="Track info will appear here…"></textarea>
+
+  <script>
+    // Path to the static AllMusic folder, relative to index.html
+    const basePath = 'AllMusic';
+
+    let library = [];  // will hold [{ name: 'Album1', files: [...] }, ...]
+
+    const albumSel = document.getElementById('albumSelect');
+    const trackSel = document.getElementById('trackSelect');
+    const playBtn  = document.getElementById('playBtn');
+    const player   = document.getElementById('player');
+    const infoBox  = document.getElementById('info');
+
+    // 1) On page load, fetch the manifest.json
+    window.addEventListener('DOMContentLoaded', () => {
+      fetch(`${basePath}/manifest.json`)
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
         })
-        .catch(err=> console.error('Could not load library.json', err));
-  
-      // 2) when album chosen
-      albumSelect.addEventListener('change', ()=>{
-        trackSelect.innerHTML = '<option value="">Select track…</option>';
-        trackSelect.disabled = true;
-        playBtn.style.display = 'none';
-        player.style.display  = 'none';
-        infoBox.value = '';
-  
-        const sel = library.find(a=>a.name===albumSelect.value);
-        if (!sel) return;
-        sel.files.forEach(f=> trackSelect.add(new Option(f, f)));
-        trackSelect.disabled = false;
+        .then(json => {
+          // manifest.json must be an array of { name, files }
+          library = json;
+          library.forEach(album => {
+            albumSel.add(new Option(album.name, album.name));
+          });
+          albumSel.disabled = false;
+        })
+        .catch(err => {
+          console.error('Could not load manifest:', err);
+          albumSel.innerHTML = '<option>Error loading albums</option>';
+        });
+    });
+
+    // 2) When an album is selected, populate its tracks
+    albumSel.addEventListener('change', () => {
+      trackSel.innerHTML = '<option value="">Select a track…</option>';
+      trackSel.disabled    = true;
+      playBtn.style.display = 'none';
+      player.style.display  = 'none';
+      infoBox.value         = '';
+
+      const selectedAlbum = library.find(a => a.name === albumSel.value);
+      if (!selectedAlbum) return;
+
+      selectedAlbum.files.forEach(fileName => {
+        trackSel.add(new Option(fileName, fileName));
       });
-  
-      // 3) when track chosen
-      trackSelect.addEventListener('change', ()=>{
-        playBtn.style.display = trackSelect.value ? 'inline-block' : 'none';
-        player.style.display  = 'none';
-        infoBox.value = '';
-      });
-  
-      // 4) play & load text
-      playBtn.addEventListener('click', ()=>{
-        const album = albumSelect.value;
-        const file  = trackSelect.value;
-        if (!album||!file) return;
-  
-        // audio
-        player.src = `AllMusic/${album}/${file}`;
-        player.style.display = 'block';
-        player.play();
-  
-        // text
-        const txtPath = `AllMusic/${album}/${file.replace(/\.mp3$/i,'.txt')}`;
-        fetch(txtPath)
-          .then(r=>r.text())
-          .then(text=> infoBox.value = text)
-          .catch(_=> infoBox.value = 'No .txt found.');
-      });
-    </script>
-  </body>
-  </html>
-  
+      trackSel.disabled = false;
+    });
+
+    // 3) Show Play button when a track is chosen
+    trackSel.addEventListener('change', () => {
+      playBtn.style.display = trackSel.value ? 'inline-block' : 'none';
+      player.style.display  = 'none';
+      infoBox.value         = '';
+    });
+
+    // 4) On Play, stream the MP3 and load the .txt
+    playBtn.addEventListener('click', () => {
+      const album = albumSel.value;
+      const track = trackSel.value;
+      if (!album || !track) return;
+
+      // Play the MP3
+      player.src = `${basePath}/${encodeURIComponent(album)}/${encodeURIComponent(track)}`;
+      player.style.display = 'block';
+      player.play();
+
+      // Load matching .txt file
+      const txtName = track.replace(/\.mp3$/i, '.txt');
+      fetch(`${basePath}/${encodeURIComponent(album)}/${encodeURIComponent(txtName)}`)
+        .then(res => {
+          if (!res.ok) throw new Error('No info file');
+          return res.text();
+        })
+        .then(text => infoBox.value = text)
+        .catch(() => infoBox.value = 'No info file found.');
+    });
+  </script>
+</body>
+</html>
